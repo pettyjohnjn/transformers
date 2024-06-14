@@ -2425,11 +2425,7 @@ class GenerationMixin:
                 next_past_key_values = selected_outputs["past_key_values"]
 
             else:
-<<<<<<< HEAD
                 _, next_past_key_values = self._extract_past_from_model_output(outputs, standardize_cache_format=True)
-=======
-                next_past_key_values = self._extract_past_from_model_output(outputs, standardize_cache_format=True)
->>>>>>> 86cb8fce8 (Working on adding hook)
                 # Do it in-place layer per layer to save memory
                 if isinstance(next_past_key_values, DynamicCache):
                     next_past_key_values.batch_select_indices(augmented_idx)

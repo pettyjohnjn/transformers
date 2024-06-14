@@ -282,7 +282,7 @@ class GPT2Attention(nn.Module):
 
         bsz, num_heads, q_len, hidden_size = attn_output.shape
 
-        head_out = torch.zeros((self.num_heads, bsz, q_len, self.embed_dim))
+        head_out = torch.zeros((bsz, self.num_heads, q_len, self.embed_dim))
         for i in range(self.num_heads):
             mid = attn_output[:, :, i, :] @ new_W_O[i]
             print(mid.shape)
