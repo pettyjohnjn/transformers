@@ -72,8 +72,13 @@ def enable_full_determinism(seed: int, warn_only: bool = False):
         os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
         os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"
         # The environment variable required to enable deterministic mode on Ascend NPUs.
+<<<<<<< HEAD
         os.environ["ASCEND_LAUNCH_BLOCKING"] = "1"
         os.environ["HCCL_DETERMINISTIC"] = "1"
+=======
+        os.environ["ASCEND_LAUNCH_BLOCKING"] = 1
+        os.environ["HCCL_DETERMINISTIC"] = 1
+>>>>>>> 86cb8fce8 (Working on adding hook)
         torch.use_deterministic_algorithms(True, warn_only=warn_only)
 
         # Enable CUDNN deterministic mode

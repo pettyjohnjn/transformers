@@ -1446,6 +1446,16 @@ class GenerationMixin:
         """
         return self._supports_cache_class and "jamba" not in self.__class__.__name__.lower()
 
+    def _supports_default_dynamic_cache(self) -> bool:
+        """
+        Return `True` if current model can use a `DynamicCache` instance when initializing the `past_key_values`.
+        This is mostly the same as `_supports_cache_class` attribute, but add exception for `Jamba` model which
+        uses its own `HybridMambaAttentionDynamicCache` and do not need to initialize the Cache in advance in
+        order to save memory (because no back and forth `to_legacy_cache` and `from_legacy_cache` will be performed
+        for `HybridMambaAttentionDynamicCache`).
+        """
+        return self._supports_cache_class and "jamba" not in self.__class__.__name__.lower()
+
     def _prepare_special_tokens(
         self,
         generation_config: GenerationConfig,
@@ -1541,6 +1551,9 @@ class GenerationMixin:
         streamer: Optional["BaseStreamer"] = None,
         negative_prompt_ids: Optional[torch.Tensor] = None,
         negative_prompt_attention_mask: Optional[torch.Tensor] = None,
+        test: Optional[int] = None,
+        inject_tensor: Optional[torch.Tensor] = None,
+        inject_layer: Optional[int] = None,
         **kwargs,
     ) -> Union[GenerateOutput, torch.LongTensor]:
         r"""
@@ -1626,6 +1639,8 @@ class GenerationMixin:
                     - [`~generation.GenerateEncoderDecoderOutput`],
                     - [`~generation.GenerateBeamEncoderDecoderOutput`]
         """
+
+        #print(f'Works for generate?: {test}')
         # 1. Handle `generation_config` and kwargs that might update it, and validate the `.generate()` call
         self._validate_model_class()
         tokenizer = kwargs.pop("tokenizer", None)  # Pull this out first, we only use it for stopping criteria
@@ -1873,6 +1888,8 @@ class GenerationMixin:
                 generation_config=generation_config,
                 synced_gpus=synced_gpus,
                 streamer=streamer,
+                inject_tensor = inject_tensor, # Pass the Memory tensor
+                inject_layer = inject_layer  # Pass the layer to be modified
                 **model_kwargs,
             )
 
@@ -1901,6 +1918,8 @@ class GenerationMixin:
                 generation_config=generation_config,
                 synced_gpus=synced_gpus,
                 streamer=streamer,
+                inject_tensor = inject_tensor, # Pass the Memory tensor
+                inject_layer = inject_layer,  # Pass the layer to be modified
                 **model_kwargs,
             )
 
@@ -2148,6 +2167,7 @@ class GenerationMixin:
         streamer: Optional["BaseStreamer"],
         **model_kwargs,
     ) -> Union[GenerateNonBeamOutput, torch.LongTensor]:
+
         r"""
         Generates sequences of token ids for models with a language modeling head using **contrastive search** and can
         be used for text-decoder, text-to-text, speech-to-text, and vision-to-text models.
@@ -2405,7 +2425,11 @@ class GenerationMixin:
                 next_past_key_values = selected_outputs["past_key_values"]
 
             else:
+<<<<<<< HEAD
                 _, next_past_key_values = self._extract_past_from_model_output(outputs, standardize_cache_format=True)
+=======
+                next_past_key_values = self._extract_past_from_model_output(outputs, standardize_cache_format=True)
+>>>>>>> 86cb8fce8 (Working on adding hook)
                 # Do it in-place layer per layer to save memory
                 if isinstance(next_past_key_values, DynamicCache):
                     next_past_key_values.batch_select_indices(augmented_idx)
@@ -2543,6 +2567,7 @@ class GenerationMixin:
             **model_kwargs,
         )
 
+#THIS ONE!!!!! HERE
     def _sample(
         self,
         input_ids: torch.LongTensor,
@@ -2552,8 +2577,12 @@ class GenerationMixin:
         synced_gpus: bool,
         streamer: Optional["BaseStreamer"],
         logits_warper: Optional[LogitsProcessorList] = None,
+        test: Optional[int] = None,
+        inject_tensor: Optional[torch.Tensor] = None,
+        inject_layer: Optional[int] = None,
         **model_kwargs,
     ) -> Union[GenerateNonBeamOutput, torch.LongTensor]:
+
         r"""
         Generates sequences of token ids for models with a language modeling head using **multinomial sampling** and
         can be used for text-decoder, text-to-text, speech-to-text, and vision-to-text models.
@@ -2590,6 +2619,7 @@ class GenerationMixin:
             `return_dict_in_generate=True` or a [`~generation.GenerateEncoderDecoderOutput`] if
             `model.config.is_encoder_decoder=True`.
         """
+        #print(f'Works for _sample?: {test}')
         # init values
         pad_token_id = generation_config.pad_token_id
         output_attentions = generation_config.output_attentions
@@ -2629,12 +2659,14 @@ class GenerationMixin:
             # prepare model inputs
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
-            # forward pass to get next token
+            # forward pass to get next token FORWARD PASS DONE HERE!!!!!!!!!!!!!
             outputs = self(
                 **model_inputs,
                 return_dict=True,
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
+                inject_tensor = inject_tensor, # Pass the Memory tensor
+                inject_layer = inject_layer  # Pass the layer to be modified
             )
 
             if synced_gpus and this_peer_finished:

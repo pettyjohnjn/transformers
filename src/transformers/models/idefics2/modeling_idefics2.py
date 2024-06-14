@@ -1881,7 +1881,12 @@ class Idefics2ForConditionalGeneration(Idefics2PreTrainedModel):
         # Omit tokens covered by past_key_values
         if past_key_values is not None:
             # Past key values are always initialized with a `Cache` object -> no need for if-else anymore
+<<<<<<< HEAD
             past_length = past_key_values.get_seq_length()
+=======
+            cache_length = past_key_values.get_seq_length()
+            past_length = past_key_values.seen_tokens
+>>>>>>> 86cb8fce8 (Working on adding hook)
             max_cache_length = past_key_values.get_max_length()
 
             # Keep only the unprocessed tokens:
