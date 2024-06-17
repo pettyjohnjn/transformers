@@ -171,6 +171,9 @@ class GPT2Attention(nn.Module):
             self.c_attn = Conv1D(3 * self.embed_dim, self.embed_dim) #NOTE: we're using this one
         self.c_proj = Conv1D(self.embed_dim, self.embed_dim)
 
+        #Pull out attention head:
+        self.head_out = None
+
         self.attn_dropout = nn.Dropout(config.attn_pdrop)
         self.resid_dropout = nn.Dropout(config.resid_pdrop)
         self.is_causal = True
@@ -272,29 +275,18 @@ class GPT2Attention(nn.Module):
             attn_weights = attn_weights * head_mask
 
         attn_output = torch.matmul(attn_weights, value)
-        #print(attn_output.shape)
 
-        attn_output = attn_output.transpose(1,2).contiguous()
-
-        #####################################################
-
-        #####################################################
-
+        # Split apart the attention heads
         W_O = self.c_proj.weight
-        new_W_O = torch.reshape(W_O.T, (self.num_heads, self.head_dim, self.embed_dim))
+        new_W_O = torch.reshape(W_O, (self.num_heads, self.head_dim, self.embed_dim))
+        head_out = attn_output @ new_W_O # Attention head layer output per head
 
-        bsz, q_len, num_heads, hidden_size = attn_output.shape
-        assert num_heads == self.num_heads, "Mismatch in number of heads"
-        assert hidden_size == self.head_dim, "Mismatch in head dimension"
-
-        head_out = torch.zeros((bsz, self.num_heads, q_len, self.embed_dim))
-        for i in range(self.num_heads):
-            head_out[:, i, :, :] = torch.matmul(attn_output[:, :, i, :], new_W_O[i])
-
-        #print(f'{self.layer_idx} {attn_output.shape}')
-        #attn_output = attn_output.reshape(bsz, q_len, hidden_size)
-        attn_output = attn_output.transpose(1,2).contiguous()
         return attn_output, attn_weights, head_out
+    
+    def _modify_attn(self, layer_idx, head_idx, injection):
+        print("modify func")
+        if self.layer_idx == layer_idx:
+            self.head_out = injection
 
     def _upcast_and_reordered_attn(self, query, key, value, attention_mask=None, head_mask=None):
         # Use `torch.baddbmm` (a bit more efficient w/ alpha param for scaling -- from Megatron-LM)
@@ -391,18 +383,11 @@ class GPT2Attention(nn.Module):
             key, value = self.c_attn(encoder_hidden_states).split(self.split_size, dim=2)
             attention_mask = encoder_attention_mask
         else:
-            query, key, value = self.c_attn(hidden_states).split(self.split_size, dim=2) #TODO: Add a  further switch to split between "else" and my attention calculation
-            #query, key, value = self.c_attn
-
-        #These give the Q, K, V vectors, not the Weight Matrices!
-
-        #print(hidden_states.shape)
+            query, key, value = self.c_attn(hidden_states).split(self.split_size, dim=2) 
 
         query = self._split_heads(query, self.num_heads, self.head_dim)
         key = self._split_heads(key, self.num_heads, self.head_dim)
         value = self._split_heads(value, self.num_heads, self.head_dim)
-
-        #print(f'{self.layer_idx} {key.shape}')
 
         if layer_past is not None:
             past_key, past_value = layer_past
@@ -418,17 +403,17 @@ class GPT2Attention(nn.Module):
             attn_output, attn_weights = self._upcast_and_reordered_attn(query, key, value, attention_mask, head_mask)
         else:
             attn_output, attn_weights, head_out = self._alt_attn(query, key, value, attention_mask, head_mask)
-        
-        #print(f'{self.layer_idx} {attn_output.shape}')
+
+        self.head_out = head_out
+
+        b_O = self.c_proj.bias
         attn_output = self._merge_heads(attn_output, self.num_heads, self.head_dim)
-        merged_heads = torch.sum(head_out, dim = 1)
-        print('\n', self.layer_idx, '=' * 50, '\n')
-        print(merged_heads)
-        #print(f'{self.layer_idx} {attn_output.shape}')
+        merged_heads = torch.sum(head_out, dim = 1) + b_O
         attn_output = self.c_proj(attn_output)
+        print('=' * 50)
+        print(merged_heads)
         print(attn_output)
-        #print(f'{self.layer_idx} | {attn_output.shape}')
-        #print(attn_output.shape)
+
 
         attn_output = self.resid_dropout(attn_output)
         #print(f'{self.layer_idx} {attn_output.shape}')
