@@ -280,13 +280,9 @@ class GPT2Attention(nn.Module):
         W_O = self.c_proj.weight
         new_W_O = torch.reshape(W_O, (self.num_heads, self.head_dim, self.embed_dim))
         head_out = attn_output @ new_W_O # Attention head layer output per head
+        head_out = head_out.transpose(1, 2)  # Swap position of q_len, and num_heads
 
         return attn_output, attn_weights, head_out
-    
-    def _modify_attn(self, layer_idx, head_idx, injection):
-        print("modify func")
-        if self.layer_idx == layer_idx:
-            self.head_out = injection
 
     def _upcast_and_reordered_attn(self, query, key, value, attention_mask=None, head_mask=None):
         # Use `torch.baddbmm` (a bit more efficient w/ alpha param for scaling -- from Megatron-LM)
@@ -403,16 +399,12 @@ class GPT2Attention(nn.Module):
             attn_output, attn_weights = self._upcast_and_reordered_attn(query, key, value, attention_mask, head_mask)
         else:
             attn_output, attn_weights, head_out = self._alt_attn(query, key, value, attention_mask, head_mask)
-
         self.head_out = head_out
-
+        #print(head_out)
         b_O = self.c_proj.bias
         attn_output = self._merge_heads(attn_output, self.num_heads, self.head_dim)
         merged_heads = torch.sum(head_out, dim = 1) + b_O
         attn_output = self.c_proj(attn_output)
-        print('=' * 50)
-        print(merged_heads)
-        print(attn_output)
 
 
         attn_output = self.resid_dropout(attn_output)
