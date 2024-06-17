@@ -272,24 +272,28 @@ class GPT2Attention(nn.Module):
             attn_weights = attn_weights * head_mask
 
         attn_output = torch.matmul(attn_weights, value)
+        #print(attn_output.shape)
 
         attn_output = attn_output.transpose(1,2).contiguous()
 
         #####################################################
 
-        W_O = self.c_proj.weight
-        new_W_O = torch.reshape(W_O, (self.num_heads, self.head_dim, self.embed_dim))
+        #####################################################
 
-        bsz, num_heads, q_len, hidden_size = attn_output.shape
+        W_O = self.c_proj.weight
+        new_W_O = torch.reshape(W_O.T, (self.num_heads, self.head_dim, self.embed_dim))
+
+        bsz, q_len, num_heads, hidden_size = attn_output.shape
+        assert num_heads == self.num_heads, "Mismatch in number of heads"
+        assert hidden_size == self.head_dim, "Mismatch in head dimension"
 
         head_out = torch.zeros((bsz, self.num_heads, q_len, self.embed_dim))
         for i in range(self.num_heads):
-            mid = attn_output[:, :, i, :] @ new_W_O[i]
-            print(mid.shape)
-            head_out[:, i, :, :] = mid
+            head_out[:, i, :, :] = torch.matmul(attn_output[:, :, i, :], new_W_O[i])
 
         #print(f'{self.layer_idx} {attn_output.shape}')
-        attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
+        #attn_output = attn_output.reshape(bsz, q_len, hidden_size)
+        attn_output = attn_output.transpose(1,2).contiguous()
         return attn_output, attn_weights, head_out
 
     def _upcast_and_reordered_attn(self, query, key, value, attention_mask=None, head_mask=None):
