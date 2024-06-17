@@ -197,7 +197,6 @@ class GPT2Attention(nn.Module):
 
     def _attn(self, query, key, value, attention_mask=None, head_mask=None):
         attn_weights = torch.matmul(query, key.transpose(-1, -2))
-        #print(query.shape)
 
         if self.scale_attn_weights: #This oneis used
             attn_weights = attn_weights / torch.full(
@@ -400,7 +399,6 @@ class GPT2Attention(nn.Module):
         else:
             attn_output, attn_weights, head_out = self._alt_attn(query, key, value, attention_mask, head_mask)
         self.head_out = head_out
-        #print(head_out)
         b_O = self.c_proj.bias
         attn_output = self._merge_heads(attn_output, self.num_heads, self.head_dim)
         merged_heads = torch.sum(head_out, dim = 1) + b_O
@@ -408,7 +406,6 @@ class GPT2Attention(nn.Module):
 
 
         attn_output = self.resid_dropout(attn_output)
-        #print(f'{self.layer_idx} {attn_output.shape}')
 
         outputs = (attn_output, present)
         if output_attentions:
@@ -416,7 +413,6 @@ class GPT2Attention(nn.Module):
 
         if inject_tensor is not None and inject_layer == self.layer_idx:
             #print("IT HAPPENED")
-            #print(inject_tensor)
             attn_output = torch.add(attn_output, 1000*inject_tensor)
 
         return outputs  # a, present, (attentions)
@@ -518,7 +514,6 @@ class GPT2FlashAttention2(GPT2Attention):
 
         attn_weights_reshaped = attn_output.reshape(bsz, query_length, self.num_heads * self.head_dim)
         attn_output = self.c_proj(attn_weights_reshaped)
-        #print(attn_output)
         attn_output = self.resid_dropout(attn_output)
 
         outputs = (attn_output, present)
