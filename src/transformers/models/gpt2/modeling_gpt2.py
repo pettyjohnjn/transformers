@@ -398,8 +398,8 @@ class GPT2Attention(nn.Module):
             attn_output, attn_weights = self._upcast_and_reordered_attn(query, key, value, attention_mask, head_mask)
         else:
             attn_output, attn_weights, head_out = self._alt_attn(query, key, value, attention_mask, head_mask)
-
-        head_out[:,:,inject_layer,:] = inject_tensor
+        if inject_tensor is not None:
+            head_out[:,:,inject_layer,:] = inject_tensor
         self.head_out = head_out
 
         b_O = self.c_proj.bias
