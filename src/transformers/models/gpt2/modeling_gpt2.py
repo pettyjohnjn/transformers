@@ -281,6 +281,8 @@ class GPT2Attention(nn.Module):
         new_W_O = torch.reshape(W_O, (self.num_heads, self.head_dim, self.embed_dim))
         head_out = attn_output @ new_W_O # Attention head layer output per head
 
+        head_out = head_out.permute(0,2,1,3)
+
         return attn_output, attn_weights, head_out
     
     def _modify_attn(self, layer_idx, head_idx, injection):
@@ -368,6 +370,7 @@ class GPT2Attention(nn.Module):
         output_attentions: Optional[bool] = False,
         inject_tensor: Optional[torch.Tensor] = None,
         inject_layer: Optional[int] = None,
+        inject_head: Optional[int] = None
     ) -> Tuple[Union[torch.Tensor, Tuple[torch.Tensor]], ...]:
         #print(f'Works for GPT2Attention?: {test}')
 
@@ -404,15 +407,20 @@ class GPT2Attention(nn.Module):
         else:
             attn_output, attn_weights, head_out = self._alt_attn(query, key, value, attention_mask, head_mask)
 
+        if inject_tensor is not None and inject_layer == self.layer_idx and inject_head is not None:
+            head_out[:,:, inject_head,:] = inject_tensor.expand_as(head_out[:,:,inject_head,:])
         self.head_out = head_out
 
         b_O = self.c_proj.bias
         attn_output = self._merge_heads(attn_output, self.num_heads, self.head_dim)
-        merged_heads = torch.sum(head_out, dim = 1) + b_O
+        merged_heads = torch.sum(head_out, dim = 2) + b_O
         attn_output = self.c_proj(attn_output)
-        print('=' * 50)
-        print(merged_heads)
-        print(attn_output)
+        # print('=' * 50)
+        # print(merged_heads)
+        # print(attn_output)
+
+        #Substitute in head-wise attention with injected information:
+        attn_output = merged_heads
 
 
         attn_output = self.resid_dropout(attn_output)
@@ -687,6 +695,7 @@ class GPT2Block(nn.Module):
         output_attentions: Optional[bool] = False,
         inject_tensor: Optional[torch.tensor] = None,
         inject_layer: Optional[int] = None,
+        inject_head: Optional[int] = None
     ) -> Union[Tuple[torch.Tensor], Optional[Tuple[torch.Tensor, Tuple[torch.FloatTensor, ...]]]]:
         #print(f'Wprls for GPT2Block?: {test}')
         residual = hidden_states
@@ -700,6 +709,7 @@ class GPT2Block(nn.Module):
             output_attentions=output_attentions,
             inject_tensor = inject_tensor,
             inject_layer = inject_layer,
+            inject_head = inject_head
         )
         attn_output = attn_outputs[0]  # output_attn: a, present, (attentions)
         outputs = attn_outputs[1:]
@@ -1071,6 +1081,7 @@ class GPT2Model(GPT2PreTrainedModel):
         return_dict: Optional[bool] = None,
         inject_tensor: Optional[torch.Tensor] = None,
         inject_layer: Optional[int] = None,
+        inject_head: Optional[int] = None
     ) -> Union[Tuple, BaseModelOutputWithPastAndCrossAttentions]:
         #print(f'Works for GPT2Model?: {test}')
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
@@ -1209,6 +1220,7 @@ class GPT2Model(GPT2PreTrainedModel):
                     output_attentions=output_attentions,
                     inject_tensor = inject_tensor,
                     inject_layer = inject_layer,
+                    inject_head = inject_head
                 )
 
             hidden_states = outputs[0]
@@ -1378,7 +1390,8 @@ class GPT2LMHeadModel(GPT2PreTrainedModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         inject_tensor: Optional[torch.Tensor] = None,
-        inject_layer: Optional[int] = None
+        inject_layer: Optional[int] = None,
+        inject_head: Optional[int] = None
     ) -> Union[Tuple, CausalLMOutputWithCrossAttentions]:
         r"""
         labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
@@ -1403,7 +1416,8 @@ class GPT2LMHeadModel(GPT2PreTrainedModel):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
             inject_tensor = inject_tensor,
-            inject_layer = inject_layer
+            inject_layer = inject_layer,
+            inject_head = inject_head
         )
         hidden_states = transformer_outputs[0]
 
