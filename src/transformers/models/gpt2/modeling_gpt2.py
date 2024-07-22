@@ -173,10 +173,13 @@ class GPT2Attention(nn.Module):
 
         #Pull out attention head:
         self.head_out = None
+        self.layer_out = None
 
         self.attn_dropout = nn.Dropout(config.attn_pdrop)
         self.resid_dropout = nn.Dropout(config.resid_pdrop)
         self.is_causal = True
+
+        self.first_iter_flag = False
 
         self.pruned_heads = set()
 
@@ -363,6 +366,7 @@ class GPT2Attention(nn.Module):
         output_attentions: Optional[bool] = False,
         inject_tensor: Optional[torch.Tensor] = None,
         inject_layer: Optional[int] = None,
+        inject_head: Optional[int] = None
     ) -> Tuple[Union[torch.Tensor, Tuple[torch.Tensor]], ...]:
         #print(f'Works for GPT2Attention?: {test}')
 
@@ -398,25 +402,32 @@ class GPT2Attention(nn.Module):
             attn_output, attn_weights = self._upcast_and_reordered_attn(query, key, value, attention_mask, head_mask)
         else:
             attn_output, attn_weights, head_out = self._alt_attn(query, key, value, attention_mask, head_mask)
-        if inject_tensor is not None:
-            head_out[:,:,inject_layer,:] = inject_tensor
+
+        if inject_tensor is not None and self.layer_idx == inject_layer and inject_head >= 0:
+            head_out[:,:,inject_head,:] = inject_tensor.expand_as(head_out[:,:,inject_head,:])
+
         self.head_out = head_out
 
         b_O = self.c_proj.bias
         attn_output = self._merge_heads(attn_output, self.num_heads, self.head_dim)
         merged_heads = torch.sum(head_out, dim = 1) + b_O
+        print('='*50)
+        print(merged_heads)
         attn_output = self.c_proj(attn_output)
+        self.layer_out = attn_output
+
 
 
         attn_output = self.resid_dropout(attn_output)
+
+        if inject_tensor is not None and self.layer_idx == inject_layer and inject_head == None:
+            print('hi')
 
         outputs = (attn_output, present)
         if output_attentions:
             outputs += (attn_weights,)
 
-        if inject_tensor is not None and inject_layer == self.layer_idx:
-            #print("IT HAPPENED")
-            attn_output = torch.add(attn_output, 1000*inject_tensor)
+        print(attn_output)
 
         return outputs  # a, present, (attentions)
 
@@ -677,6 +688,7 @@ class GPT2Block(nn.Module):
         output_attentions: Optional[bool] = False,
         inject_tensor: Optional[torch.tensor] = None,
         inject_layer: Optional[int] = None,
+        inject_head: Optional[int] = None
     ) -> Union[Tuple[torch.Tensor], Optional[Tuple[torch.Tensor, Tuple[torch.FloatTensor, ...]]]]:
         #print(f'Wprls for GPT2Block?: {test}')
         residual = hidden_states
@@ -690,6 +702,7 @@ class GPT2Block(nn.Module):
             output_attentions=output_attentions,
             inject_tensor = inject_tensor,
             inject_layer = inject_layer,
+            inject_head = inject_head
         )
         attn_output = attn_outputs[0]  # output_attn: a, present, (attentions)
         outputs = attn_outputs[1:]
@@ -1061,8 +1074,9 @@ class GPT2Model(GPT2PreTrainedModel):
         return_dict: Optional[bool] = None,
         inject_tensor: Optional[torch.Tensor] = None,
         inject_layer: Optional[int] = None,
+        inject_head: Optional[int] = None
     ) -> Union[Tuple, BaseModelOutputWithPastAndCrossAttentions]:
-        #print(f'Works for GPT2Model?: {test}')
+
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
@@ -1199,6 +1213,7 @@ class GPT2Model(GPT2PreTrainedModel):
                     output_attentions=output_attentions,
                     inject_tensor = inject_tensor,
                     inject_layer = inject_layer,
+                    inject_head = inject_head
                 )
 
             hidden_states = outputs[0]
@@ -1368,7 +1383,8 @@ class GPT2LMHeadModel(GPT2PreTrainedModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         inject_tensor: Optional[torch.Tensor] = None,
-        inject_layer: Optional[int] = None
+        inject_layer: Optional[int] = None,
+        inject_head: Optional[int] = None
     ) -> Union[Tuple, CausalLMOutputWithCrossAttentions]:
         r"""
         labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
@@ -1393,7 +1409,8 @@ class GPT2LMHeadModel(GPT2PreTrainedModel):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
             inject_tensor = inject_tensor,
-            inject_layer = inject_layer
+            inject_layer = inject_layer,
+            inject_head = inject_head
         )
         hidden_states = transformer_outputs[0]
 

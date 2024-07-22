@@ -1554,6 +1554,7 @@ class GenerationMixin:
         test: Optional[int] = None,
         inject_tensor: Optional[torch.Tensor] = None,
         inject_layer: Optional[int] = None,
+        inject_head: Optional[int] = None,
         **kwargs,
     ) -> Union[GenerateOutput, torch.LongTensor]:
         r"""
@@ -1889,7 +1890,8 @@ class GenerationMixin:
                 synced_gpus=synced_gpus,
                 streamer=streamer,
                 inject_tensor = inject_tensor, # Pass the Memory tensor
-                inject_layer = inject_layer  # Pass the layer to be modified
+                inject_layer = inject_layer,  # Pass the layer to be modified
+                inject_head = inject_head,
                 **model_kwargs,
             )
 
@@ -1920,6 +1922,7 @@ class GenerationMixin:
                 streamer=streamer,
                 inject_tensor = inject_tensor, # Pass the Memory tensor
                 inject_layer = inject_layer,  # Pass the layer to be modified
+                inject_head = inject_head,
                 **model_kwargs,
             )
 
@@ -2576,6 +2579,7 @@ class GenerationMixin:
         test: Optional[int] = None,
         inject_tensor: Optional[torch.Tensor] = None,
         inject_layer: Optional[int] = None,
+        inject_head: Optional[int] = None,
         **model_kwargs,
     ) -> Union[GenerateNonBeamOutput, torch.LongTensor]:
 
@@ -2662,7 +2666,8 @@ class GenerationMixin:
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
                 inject_tensor = inject_tensor, # Pass the Memory tensor
-                inject_layer = inject_layer  # Pass the layer to be modified
+                inject_layer = inject_layer,  # Pass the layer to be modified
+                inject_head = inject_head,
             )
 
             if synced_gpus and this_peer_finished:
