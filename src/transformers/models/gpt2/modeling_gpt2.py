@@ -279,16 +279,13 @@ class GPT2Attention(nn.Module):
         # Split apart the attention heads
         W_O = self.c_proj.weight
         new_W_O = torch.reshape(W_O, (self.num_heads, self.head_dim, self.embed_dim))
+
         head_out = attn_output @ new_W_O # Attention head layer output per head
 
         head_out = head_out.permute(0,2,1,3)
 
         return attn_output, attn_weights, head_out
-    
-    def _modify_attn(self, layer_idx, head_idx, injection):
-        print("modify func")
-        if self.layer_idx == layer_idx:
-            self.head_out = injection
+
 
     def _upcast_and_reordered_attn(self, query, key, value, attention_mask=None, head_mask=None):
         # Use `torch.baddbmm` (a bit more efficient w/ alpha param for scaling -- from Megatron-LM)
@@ -408,7 +405,11 @@ class GPT2Attention(nn.Module):
             attn_output, attn_weights, head_out = self._alt_attn(query, key, value, attention_mask, head_mask)
 
         if inject_tensor is not None and inject_layer == self.layer_idx and inject_head is not None:
-            head_out[:,:, inject_head,:] = inject_tensor.expand_as(head_out[:,:,inject_head,:])
+            #head_out[:,:, inject_head,:] = inject_tensor.expand_as(head_out[:,:,inject_head,:])\
+            q_len = head_out.size(1)
+            # Make sure the injection embedding vector is able to cover every position in query for attention
+            inject_tensor = inject_tensor.repeat(1,q_len,1)
+            head_out[:,:, inject_head,:] = head_out[:,:, inject_head,:] - 0.25 * inject_tensor
         self.head_out = head_out
 
         b_O = self.c_proj.bias
@@ -429,11 +430,6 @@ class GPT2Attention(nn.Module):
         outputs = (attn_output, present)
         if output_attentions:
             outputs += (attn_weights,)
-
-        if inject_tensor is not None and inject_layer == self.layer_idx:
-            #print("IT HAPPENED")
-            #print(inject_tensor)
-            attn_output = torch.add(attn_output, 1000*inject_tensor)
 
         return outputs  # a, present, (attentions)
 

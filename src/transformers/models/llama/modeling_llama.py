@@ -265,6 +265,8 @@ class LlamaAttention(nn.Module):
         self.o_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=config.attention_bias)
         self._init_rope()
 
+        self.head_out = None
+
     def _init_rope(self):
         if self.config.rope_scaling is None:
             self.rotary_emb = LlamaRotaryEmbedding(
@@ -301,6 +303,9 @@ class LlamaAttention(nn.Module):
         output_attentions: bool = False,
         use_cache: bool = False,
         cache_position: Optional[torch.LongTensor] = None,
+        inject_tensor: Optional[torch.Tensor] = None,
+        inject_layer: Optional[int] = None,
+        inject_head: Optional[int] = None,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
         bsz, q_len, _ = hidden_states.size()
 
@@ -330,6 +335,8 @@ class LlamaAttention(nn.Module):
         key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
         value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
 
+        #print(inject_head)
+
         cos, sin = self.rotary_emb(value_states, position_ids)
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
@@ -347,6 +354,7 @@ class LlamaAttention(nn.Module):
             causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
             attn_weights = attn_weights + causal_mask
 
+
         # upcast attention to fp32
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
         attn_weights = nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)
@@ -360,6 +368,31 @@ class LlamaAttention(nn.Module):
 
         attn_output = attn_output.transpose(1, 2).contiguous()
 
+        ################
+        # Code diverges here for the split attention head
+        old_attn_output = attn_output
+
+        W_O = self.o_proj.weight
+        new_W_O = torch.reshape(W_O.T, (self.num_heads, self.head_dim, self.hidden_size))
+
+        head_out = torch.zeros((bsz, q_len, self.num_heads, self.hidden_size))
+
+        for i in range(self.num_heads):
+            head_out[:,:,i,:] = old_attn_output[:,:,i,:] @ new_W_O[i]
+
+        
+
+        if inject_tensor is not None and inject_layer == self.layer_idx and inject_head is not None:
+            # Make sure the injection embedding vector is able to cover every position in query for attention
+            inject_tensor = inject_tensor.repeat(1,q_len, 1)
+            head_out[:,:, inject_head,:] = head_out[:,:, inject_head,:] - 0.25 * inject_tensor
+
+        self.head_out = head_out
+        merged_heads = torch.sum(head_out, dim=2)
+
+        # End of code to split attention heads
+        ######################
+
         attn_output = attn_output.reshape(bsz, q_len, -1)
 
         if self.config.pretraining_tp > 1:
@@ -368,6 +401,9 @@ class LlamaAttention(nn.Module):
             attn_output = sum([F.linear(attn_output[i], o_proj_slices[i]) for i in range(self.config.pretraining_tp)])
         else:
             attn_output = self.o_proj(attn_output)
+
+        #Replace original attn_output with re-merged attention heads
+        attn_output = merged_heads
 
         if not output_attentions:
             attn_weights = None
@@ -687,6 +723,9 @@ class LlamaDecoderLayer(nn.Module):
         output_attentions: Optional[bool] = False,
         use_cache: Optional[bool] = False,
         cache_position: Optional[torch.LongTensor] = None,
+        inject_tensor: Optional[torch.Tensor] = None,
+        inject_layer: Optional[int] = None,
+        inject_head: Optional[int] = None,
     ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
         """
         Args:
@@ -715,6 +754,9 @@ class LlamaDecoderLayer(nn.Module):
             output_attentions=output_attentions,
             use_cache=use_cache,
             cache_position=cache_position,
+            inject_tensor = inject_tensor,
+            inject_layer = inject_layer,
+            inject_head = inject_head
         )
         hidden_states = residual + hidden_states
 
@@ -900,6 +942,9 @@ class LlamaModel(LlamaPreTrainedModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         cache_position: Optional[torch.LongTensor] = None,
+        inject_tensor: Optional[torch.Tensor] = None,
+        inject_layer: Optional[int] = None,
+        inject_head: Optional[int] = None,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -961,6 +1006,9 @@ class LlamaModel(LlamaPreTrainedModel):
                     output_attentions,
                     use_cache,
                     cache_position,
+                    inject_tensor = inject_tensor,
+                    inject_layer = inject_layer,
+                    inject_head = inject_head,
                 )
             else:
                 layer_outputs = decoder_layer(
@@ -971,6 +1019,9 @@ class LlamaModel(LlamaPreTrainedModel):
                     output_attentions=output_attentions,
                     use_cache=use_cache,
                     cache_position=cache_position,
+                    inject_tensor = inject_tensor,
+                    inject_layer = inject_layer,
+                    inject_head = inject_head,
                 )
 
             hidden_states = layer_outputs[0]
@@ -1126,6 +1177,9 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         cache_position: Optional[torch.LongTensor] = None,
+        inject_tensor: Optional[torch.Tensor] = None,
+        inject_layer: Optional[int] = None,
+        inject_head: Optional[int] = None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         r"""
         Args:
@@ -1170,6 +1224,9 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
             cache_position=cache_position,
+            inject_tensor = inject_tensor,
+            inject_layer = inject_layer,
+            inject_head = inject_head
         )
 
         hidden_states = outputs[0]
