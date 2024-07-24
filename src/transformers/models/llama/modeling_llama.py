@@ -375,7 +375,7 @@ class LlamaAttention(nn.Module):
         W_O = self.o_proj.weight
         new_W_O = torch.reshape(W_O.T, (self.num_heads, self.head_dim, self.hidden_size))
 
-        head_out = torch.zeros((bsz, q_len, self.num_heads, self.hidden_size))
+        head_out = torch.zeros((bsz, q_len, self.num_heads, self.hidden_size)).to(attn_output.device)
 
         for i in range(self.num_heads):
             head_out[:,:,i,:] = old_attn_output[:,:,i,:] @ new_W_O[i]
