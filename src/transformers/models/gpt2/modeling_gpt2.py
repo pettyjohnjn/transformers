@@ -414,8 +414,8 @@ class GPT2Attention(nn.Module):
         b_O = self.c_proj.bias
         attn_output = self._merge_heads(attn_output, self.num_heads, self.head_dim)
         merged_heads = torch.sum(head_out, dim = 1) + b_O
-        print('='*50)
-        print(merged_heads)
+        # print('='*50)
+        # print(merged_heads)
         attn_output = self.c_proj(attn_output)
         self.layer_out = attn_output
 
