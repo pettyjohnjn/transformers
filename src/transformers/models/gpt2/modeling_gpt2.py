@@ -406,6 +406,9 @@ class GPT2Attention(nn.Module):
         if inject_tensor is not None and self.layer_idx == inject_layer and inject_head >= 0:
             head_out[:,:,inject_head,:] = inject_tensor.expand_as(head_out[:,:,inject_head,:])
 
+        if self.layer_idx == 0:
+            print(f"Attention Layer 0 Shape: {attn_output.shape}")
+
         self.head_out = head_out
 
         b_O = self.c_proj.bias
