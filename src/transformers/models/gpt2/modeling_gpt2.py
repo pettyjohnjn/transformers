@@ -430,7 +430,7 @@ class GPT2Attention(nn.Module):
         if output_attentions:
             outputs += (attn_weights,)
 
-        print(attn_output)
+        #print(attn_output)
 
         return outputs  # a, present, (attentions)
 
