@@ -407,7 +407,7 @@ class GPT2Attention(nn.Module):
             head_out[:,:,inject_head,:] = inject_tensor.expand_as(head_out[:,:,inject_head,:])
 
         if self.layer_idx == 0:
-            print(f"Attention Layer 0 Shape: {attn_output.shape}")
+            print(f"Attention Layer 0 Shape: {attn_weights.shape}")
 
         self.head_out = head_out
 
