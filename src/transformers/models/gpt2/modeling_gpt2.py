@@ -280,6 +280,7 @@ class GPT2Attention(nn.Module):
 
         # Split apart the attention heads
         W_O = self.c_proj.weight
+        # print(W_O.shape)
         new_W_O = torch.reshape(W_O, (self.num_heads, self.head_dim, self.embed_dim))
         head_out = attn_output @ new_W_O # Attention head layer output per head
         head_out = head_out.transpose(1, 2)  # Swap position of q_len, and num_heads
@@ -409,10 +410,12 @@ class GPT2Attention(nn.Module):
         self.head_out = head_out
 
         b_O = self.c_proj.bias
+        # print(attn_output.shape)
         attn_output = self._merge_heads(attn_output, self.num_heads, self.head_dim)
-        merged_heads = torch.sum(head_out, dim = 1) + b_O
-        print('='*50)
-        print(merged_heads)
+        merged_heads = torch.sum(head_out, dim = 2) + b_O
+        # print('='*50)
+        # print(f' Headout: {head_out.shape}')
+        # print(f' merged: {merged_heads.shape}')
         attn_output = self.c_proj(attn_output)
         self.layer_out = attn_output
 
@@ -427,7 +430,9 @@ class GPT2Attention(nn.Module):
         if output_attentions:
             outputs += (attn_weights,)
 
-        print(attn_output)
+        # print(attn_output.shape)
+        # print(f' Merged Head: {merged_heads}')
+        # print(f' Attn Out   : {attn_output}')
 
         return outputs  # a, present, (attentions)
 

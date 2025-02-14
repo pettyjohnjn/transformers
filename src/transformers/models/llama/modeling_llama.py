@@ -265,6 +265,9 @@ class LlamaAttention(nn.Module):
         self.o_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=config.attention_bias)
         self._init_rope()
 
+        self.head_out = None
+        self.bias = config.attention_bias
+
     def _init_rope(self):
         if self.config.rope_scaling is None:
             self.rotary_emb = LlamaRotaryEmbedding(
@@ -301,6 +304,8 @@ class LlamaAttention(nn.Module):
         output_attentions: bool = False,
         use_cache: bool = False,
         cache_position: Optional[torch.LongTensor] = None,
+        inject_tensor: Optional[torch.tensor] = None,
+        inject_layer: Optional[list[int]] = None,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
         bsz, q_len, _ = hidden_states.size()
 
@@ -350,7 +355,28 @@ class LlamaAttention(nn.Module):
         # upcast attention to fp32
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
         attn_weights = nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)
-        attn_output = torch.matmul(attn_weights, value_states)
+        attn_output = torch.matmul(attn_weights, value_states) # [bsz, n_heads, q_len, d_head]
+
+
+        # Seperate attention heads
+        W_O = self.o_proj.weight
+        b_0 = self.o_proj.bias # This is None
+        new_W_O = torch.reshape(W_O, (self.num_heads, self.head_dim, self.hidden_size))
+        head_out = attn_output @ new_W_O
+        head_out = head_out.transpose(1,2).contiguous()
+
+        self.head_out = head_out  # [bsz, q_len, n_heads, d_model]
+
+        # Perform injection on appropriate layer
+        if inject_tensor is not None and self.layer_idx in inject_layer:
+            print(self.layer_idx)
+
+
+        # Merge heads back together
+        if b_0 is None:
+            merged_heads = torch.sum(head_out, dim = 2 ) # [bsz, q_len, d_model]
+        else:
+            merged_heads = torch.sum(head_out, dim = 2) + b_0
 
         if attn_output.size() != (bsz, self.num_heads, q_len, self.head_dim):
             raise ValueError(
@@ -360,7 +386,8 @@ class LlamaAttention(nn.Module):
 
         attn_output = attn_output.transpose(1, 2).contiguous()
 
-        attn_output = attn_output.reshape(bsz, q_len, -1)
+        attn_output = attn_output.reshape(bsz, q_len, -1) # [bsz, q_len, d_model]
+        print(attn_output.shape)
 
         if self.config.pretraining_tp > 1:
             attn_output = attn_output.split(self.hidden_size // self.config.pretraining_tp, dim=2)
@@ -371,6 +398,11 @@ class LlamaAttention(nn.Module):
 
         if not output_attentions:
             attn_weights = None
+
+        print("-=-" * 50)
+        print(f' Merged Heads: {merged_heads}')
+        print(f' Attn Out    : {attn_output}')
+        print("-=-" * 50)
 
         return attn_output, attn_weights, past_key_value
 
@@ -687,6 +719,8 @@ class LlamaDecoderLayer(nn.Module):
         output_attentions: Optional[bool] = False,
         use_cache: Optional[bool] = False,
         cache_position: Optional[torch.LongTensor] = None,
+        inject_tensor: Optional[torch.tensor] = None,
+        inject_layer: Optional[list[int]] = None,
     ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
         """
         Args:
@@ -715,6 +749,8 @@ class LlamaDecoderLayer(nn.Module):
             output_attentions=output_attentions,
             use_cache=use_cache,
             cache_position=cache_position,
+            inject_tensor=inject_layer,
+            inject_layer=inject_layer,
         )
         hidden_states = residual + hidden_states
 
@@ -900,6 +936,8 @@ class LlamaModel(LlamaPreTrainedModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         cache_position: Optional[torch.LongTensor] = None,
+        inject_tensor: Optional[torch.tensor] = None,
+        inject_layer: Optional[List[int]] = None,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -971,6 +1009,8 @@ class LlamaModel(LlamaPreTrainedModel):
                     output_attentions=output_attentions,
                     use_cache=use_cache,
                     cache_position=cache_position,
+                    inject_tensor = inject_tensor,
+                    inject_layer = inject_layer,
                 )
 
             hidden_states = layer_outputs[0]
@@ -1126,6 +1166,9 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         cache_position: Optional[torch.LongTensor] = None,
+        inject_tensor: Optional[torch.Tensor] = None,
+        inject_layer: Optional[List[int]] = None,
+        inject_head: Optional[int] = None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         r"""
         Args:
@@ -1170,6 +1213,8 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
             cache_position=cache_position,
+            inject_tensor = inject_tensor,
+            inject_layer = inject_layer,
         )
 
         hidden_states = outputs[0]
