@@ -361,7 +361,7 @@ class LlamaAttention(nn.Module):
         # Seperate attention heads
         W_O = self.o_proj.weight
         b_0 = self.o_proj.bias # This is None
-        new_W_O = torch.reshape(W_O, (self.num_heads, self.head_dim, self.hidden_size))
+        new_W_O = torch.reshape(W_O.T, (self.num_heads, self.head_dim, self.hidden_size))
         head_out = attn_output @ new_W_O
         head_out = head_out.transpose(1,2).contiguous()
 
@@ -378,6 +378,7 @@ class LlamaAttention(nn.Module):
         else:
             merged_heads = torch.sum(head_out, dim = 2) + b_0
 
+
         if attn_output.size() != (bsz, self.num_heads, q_len, self.head_dim):
             raise ValueError(
                 f"`attn_output` should be of size {(bsz, self.num_heads, q_len, self.head_dim)}, but is"
@@ -387,7 +388,6 @@ class LlamaAttention(nn.Module):
         attn_output = attn_output.transpose(1, 2).contiguous()
 
         attn_output = attn_output.reshape(bsz, q_len, -1) # [bsz, q_len, d_model]
-        print(attn_output.shape)
 
         if self.config.pretraining_tp > 1:
             attn_output = attn_output.split(self.hidden_size // self.config.pretraining_tp, dim=2)
