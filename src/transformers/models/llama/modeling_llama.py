@@ -399,10 +399,10 @@ class LlamaAttention(nn.Module):
         if not output_attentions:
             attn_weights = None
 
-        print("-=-" * 50)
-        print(f' Merged Heads: {merged_heads}')
-        print(f' Attn Out    : {attn_output}')
-        print("-=-" * 50)
+        # print("-=-" * 50)
+        # print(f' Merged Heads: {merged_heads}')
+        # print(f' Attn Out    : {attn_output}')
+        # print("-=-" * 50)
 
         return attn_output, attn_weights, past_key_value
 
