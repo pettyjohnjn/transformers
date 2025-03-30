@@ -267,6 +267,7 @@ class LlamaAttention(nn.Module):
 
         self.head_out = None
         self.bias = config.attention_bias
+        self.layer_out = None
 
     def _init_rope(self):
         if self.config.rope_scaling is None:
@@ -403,6 +404,8 @@ class LlamaAttention(nn.Module):
         # print(f' Merged Heads: {merged_heads}')
         # print(f' Attn Out    : {attn_output}')
         # print("-=-" * 50)
+
+        self.layer_out = attn_output
 
         return attn_output, attn_weights, past_key_value
 

@@ -417,8 +417,6 @@ class GPT2Attention(nn.Module):
         # print(f' Headout: {head_out.shape}')
         # print(f' merged: {merged_heads.shape}')
         attn_output = self.c_proj(attn_output)
-        self.layer_out = attn_output
-
 
 
         attn_output = self.resid_dropout(attn_output)
@@ -433,6 +431,7 @@ class GPT2Attention(nn.Module):
         # print(attn_output.shape)
         # print(f' Merged Head: {merged_heads}')
         # print(f' Attn Out   : {attn_output}')
+        self.layer_out = attn_output
 
         return outputs  # a, present, (attentions)
 
